@@ -11,6 +11,16 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(agent.cpu_percent((100, 40), (200, 60)), 80.0)
         self.assertIsNone(agent.cpu_percent((100, 40), (100, 40)))
 
+    def test_collect_reports_logical_vcpu_count(self):
+        with patch.object(agent, "cpu_times", return_value=(200, 60)), \
+             patch.object(agent, "cpu_spec", return_value={"modelName": "AMD EPYC", "architecture": "x86_64", "logicalCores": 8, "physicalCores": 4}), \
+             patch.object(agent.os, "getloadavg", return_value=(1.0, 0.5, 0.25)), \
+             patch.object(agent, "memory_stats", return_value={}), \
+             patch.object(agent, "disk_stats", return_value={}), \
+             patch.object(agent, "gpu_stats", return_value=[]):
+            _, payload = agent.collect((100, 40))
+        self.assertEqual(payload["cpu"]["logicalCores"], 8)
+
     def test_linux_memory(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "meminfo"
