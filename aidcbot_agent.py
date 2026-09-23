@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import os
+import platform
 import random
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MIB = 1024 * 1024
-GPU_QUERY = "index,uuid,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw"
+GPU_QUERY = "index,uuid,name,driver_version,pci.bus_id,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw"
 
 
 def number(value):
@@ -44,6 +45,28 @@ def cpu_percent(previous, current):
     return round(max(0, min(100, 100 * (total - idle) / total)), 2) if total > 0 else None
 
 
+def cpu_spec(path="/proc/cpuinfo"):
+    processors, models, physical = 0, [], set()
+    current = {}
+    for line in Path(path).read_text(errors="replace").splitlines() + [""]:
+        if not line.strip():
+            if current:
+                processors += 1
+                model = current.get("model name") or current.get("hardware") or current.get("processor")
+                if model and not str(model).isdigit() and model not in models:
+                    models.append(model)
+                if "physical id" in current and "core id" in current:
+                    physical.add((current["physical id"], current["core id"]))
+                current = {}
+            continue
+        key, separator, value = line.partition(":")
+        if separator:
+            current[key.strip().lower()] = value.strip()
+    return {"modelName": models[0] if models else platform.processor() or "Unknown CPU",
+            "architecture": platform.machine() or "unknown", "logicalCores": processors or os.cpu_count() or 1,
+            "physicalCores": len(physical) or None}
+
+
 def memory_stats(path="/proc/meminfo"):
     values = {}
     for line in Path(path).read_text().splitlines():
@@ -56,9 +79,16 @@ def memory_stats(path="/proc/meminfo"):
     return {"totalBytes": total, "usedBytes": used, "utilizationPercent": round(100 * used / total, 2) if total else None}
 
 
-def disk_stats(path="/"):
+def disk_stats(path="/", mounts_path="/proc/mounts"):
     usage = shutil.disk_usage(path)
-    return {"mount": path, "totalBytes": usage.total, "usedBytes": usage.used,
+    device, file_system = None, None
+    try:
+        matches = [line.split() for line in Path(mounts_path).read_text(errors="replace").splitlines() if len(line.split()) >= 3 and line.split()[1] == path]
+        if matches:
+            device, _, file_system = matches[-1][:3]
+    except OSError:
+        pass
+    return {"mount": path, "device": device, "fileSystem": file_system, "totalBytes": usage.total, "usedBytes": usage.used,
             "utilizationPercent": round(100 * usage.used / usage.total, 2) if usage.total else None}
 
 
@@ -70,13 +100,13 @@ def gpu_stats():
         return []
     gpus = []
     for row in csv.reader(result.stdout.splitlines()):
-        if len(row) != 8:
+        if len(row) != 10:
             continue
-        index, uuid, name, utilization, used_mib, total_mib, temperature, power = [item.strip() for item in row]
+        index, uuid, name, driver, pci_bus_id, utilization, used_mib, total_mib, temperature, power = [item.strip() for item in row]
         if not index.isdigit() or not uuid or not name:
             continue
         used, total = number(used_mib), number(total_mib)
-        gpus.append({"index": int(index), "uuid": uuid, "name": name,
+        gpus.append({"index": int(index), "uuid": uuid, "name": name, "driverVersion": driver, "pciBusId": pci_bus_id,
                      "utilizationPercent": number(utilization),
                      "memoryUsedBytes": int(used * MIB) if used is not None else None,
                      "memoryTotalBytes": int(total * MIB) if total is not None else None,
@@ -91,7 +121,7 @@ def collect(previous_cpu):
     except OSError:
         load = None
     return current_cpu, {"sampledAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                         "cpu": {"utilizationPercent": cpu_percent(previous_cpu, current_cpu), "loadAverage": load},
+                         "cpu": {"utilizationPercent": cpu_percent(previous_cpu, current_cpu), "loadAverage": load, **cpu_spec()},
                          "memory": memory_stats(), "disk": disk_stats(), "gpus": gpu_stats()}
 
 

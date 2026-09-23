@@ -1,6 +1,6 @@
 # aidcbot
 
-Read-only Linux telemetry agent for GPU servers listed on OpenNEXT. It samples aggregate CPU load, memory, root-disk usage, and NVIDIA GPU utilization, VRAM, temperature, and power. It reports over HTTPS every 30 seconds by default; it does not execute commands received from the API.
+Read-only Linux telemetry agent for GPU servers listed on OpenNEXT. It reports CPU model, architecture and core counts; memory capacity and usage; root-disk device, filesystem, capacity and usage; plus NVIDIA GPU model, UUID, PCI bus, driver, utilization, VRAM, temperature and power. It reports over HTTPS every 30 seconds by default; it does not execute commands received from the API.
 
 ## Enrollment
 
@@ -35,7 +35,7 @@ If authentication, source IP, or GPU inventory validation fails, the platform do
 
 ## Data contract
 
-`POST /api/v1/terminal/capacities/{id}/metrics` with `Authorization: Bearer <capacity token>` and JSON containing `sampledAt`, `cpu`, `memory`, `disk`, and `gpus`. Metrics are percentages and bytes, with nullable readings when hardware does not expose a value. The API returns `202` for an accepted sample, `403` for token/IP mismatch, `422` for invalid or stale samples, and `409` for replayed or over-frequent samples. The capacity owner can read history at `GET /api/v1/terminal/capacities/{id}/metrics` using the signed-in Terminal session.
+`POST /api/v1/terminal/capacities/{id}/metrics` with `Authorization: Bearer <capacity token>` and JSON containing `sampledAt`, `cpu`, `memory`, `disk`, and `gpus`. Hardware identity fields accompany percentages and byte counters; readings remain nullable when the host does not expose them. The API returns `202` for an accepted sample, `403` for token/IP mismatch, `422` for invalid or stale samples, and `409` for replayed or over-frequent samples. The capacity owner can read history at `GET /api/v1/terminal/capacities/{id}/metrics` using the signed-in Terminal session.
 
 ## Tests
 
